@@ -40,7 +40,7 @@ struct InboxView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     if tasks.isEmpty {
-                        EmptyStateView(title: "今天 Inbox 为空", symbolName: "tray")
+                        EmptyStateView(title: "Inbox 为空", symbolName: "tray")
                             .frame(maxWidth: .infinity, minHeight: 220)
                     } else {
                         ForEach(tasks) { task in

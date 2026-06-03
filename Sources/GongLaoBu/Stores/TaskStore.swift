@@ -31,28 +31,41 @@ final class TaskStore {
         let task = TaskItem(
             title: trimmed,
             plannedDate: day,
-            sortOrder: nextSortOrder(quadrant: nil, on: day)
+            isDateAssigned: false,
+            sortOrder: nextSortOrder(quadrant: nil)
         )
         tasks.append(task)
-        normalizeSortOrders(quadrant: nil, on: day)
+        normalizeSortOrders(quadrant: nil)
         save()
     }
 
     func inboxTasks(on date: Date = .now) -> [TaskItem] {
-        activeTasks(on: date)
-            .filter { $0.quadrant == nil }
-            .sorted(by: taskSort)
+        tasks
+            .filter { !$0.isCompleted && (!$0.isDateAssigned || $0.quadrant == nil) }
+            .sorted(by: planningSort)
     }
 
-    func activeTasks(in quadrant: TaskQuadrant, on date: Date = .now) -> [TaskItem] {
-        activeTasks(on: date)
-            .filter { $0.quadrant == quadrant }
+    func dateUnassignedTasks() -> [TaskItem] {
+        tasks
+            .filter { !$0.isCompleted && !$0.isDateAssigned }
+            .sorted(by: planningSort)
+    }
+
+    func quadrantUnassignedTasks() -> [TaskItem] {
+        tasks
+            .filter { !$0.isCompleted && $0.quadrant == nil }
+            .sorted(by: planningSort)
+    }
+
+    func activeTasks(in quadrant: TaskQuadrant) -> [TaskItem] {
+        tasks
+            .filter { !$0.isCompleted && $0.quadrant == quadrant }
             .sorted(by: taskSort)
     }
 
     func calendarTasks(on date: Date) -> [TaskItem] {
         tasks
-            .filter { calendar.isDate($0.plannedDate, inSameDayAs: date) }
+            .filter { !$0.isCompleted && $0.isDateAssigned && calendar.isDate($0.plannedDate, inSameDayAs: date) }
             .sorted { lhs, rhs in
                 let leftRank = lhs.quadrant?.sortRank ?? 4
                 let rightRank = rhs.quadrant?.sortRank ?? 4
@@ -192,12 +205,11 @@ final class TaskStore {
 
     func assignTask(id: UUID, to quadrant: TaskQuadrant?) {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
-        let day = tasks[index].plannedDate
         let previousQuadrant = tasks[index].quadrant
         tasks[index].quadrant = quadrant
-        tasks[index].sortOrder = nextSortOrder(quadrant: quadrant, on: day)
-        normalizeSortOrders(quadrant: previousQuadrant, on: day)
-        normalizeSortOrders(quadrant: quadrant, on: day)
+        tasks[index].sortOrder = nextSortOrder(quadrant: quadrant)
+        normalizeSortOrders(quadrant: previousQuadrant)
+        normalizeSortOrders(quadrant: quadrant)
         save()
     }
 
@@ -207,15 +219,23 @@ final class TaskStore {
 
     func schedule(id: UUID, to date: Date) {
         guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
-        let previousDay = tasks[index].plannedDate
-        let previousQuadrant = tasks[index].quadrant
+        guard !tasks[index].isCompleted else { return }
         let newDay = calendar.startOfDay(for: date)
 
         tasks[index].plannedDate = newDay
-        tasks[index].sortOrder = nextSortOrder(quadrant: tasks[index].quadrant, on: newDay)
+        tasks[index].isDateAssigned = true
+        save()
+    }
 
-        normalizeSortOrders(quadrant: previousQuadrant, on: previousDay)
-        normalizeSortOrders(quadrant: tasks[index].quadrant, on: newDay)
+    func unschedule(idString: String) {
+        guard let id = UUID(uuidString: idString) else { return }
+        unschedule(id: id)
+    }
+
+    func unschedule(id: UUID) {
+        guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
+        guard !tasks[index].isCompleted else { return }
+        tasks[index].isDateAssigned = false
         save()
     }
 
@@ -248,7 +268,7 @@ final class TaskStore {
         tasks.remove(at: index)
 
         if !deletedTask.isCompleted {
-            normalizeSortOrders(quadrant: deletedTask.quadrant, on: deletedTask.plannedDate)
+            normalizeSortOrders(quadrant: deletedTask.quadrant)
         }
 
         save()
@@ -264,7 +284,7 @@ final class TaskStore {
         tasks.append(task)
 
         if !task.isCompleted {
-            normalizeSortOrders(quadrant: task.quadrant, on: task.plannedDate)
+            normalizeSortOrders(quadrant: task.quadrant)
         }
 
         recentlyDeletedTask = nil
@@ -273,10 +293,9 @@ final class TaskStore {
 
     func move(_ task: TaskItem, by offset: Int) {
         guard let currentIndex = tasks.firstIndex(where: { $0.id == task.id }) else { return }
-        let day = tasks[currentIndex].plannedDate
         let quadrant = tasks[currentIndex].quadrant
         let group = tasks
-            .filter { !$0.isCompleted && calendar.isDate($0.plannedDate, inSameDayAs: day) && $0.quadrant == quadrant }
+            .filter { !$0.isCompleted && $0.quadrant == quadrant }
             .sorted(by: taskSort)
 
         guard let currentGroupIndex = group.firstIndex(where: { $0.id == task.id }) else { return }
@@ -289,7 +308,7 @@ final class TaskStore {
         let currentOrder = tasks[currentIndex].sortOrder
         tasks[currentIndex].sortOrder = tasks[targetIndex].sortOrder
         tasks[targetIndex].sortOrder = currentOrder
-        normalizeSortOrders(quadrant: quadrant, on: day)
+        normalizeSortOrders(quadrant: quadrant)
         save()
     }
 
@@ -304,16 +323,13 @@ final class TaskStore {
         guard let targetIndex = tasks.firstIndex(where: { $0.id == targetID }) else { return }
         guard !tasks[movingIndex].isCompleted, !tasks[targetIndex].isCompleted else { return }
 
-        let previousDay = tasks[movingIndex].plannedDate
         let previousQuadrant = tasks[movingIndex].quadrant
-        let targetDay = tasks[targetIndex].plannedDate
         let targetQuadrant = tasks[targetIndex].quadrant
 
-        tasks[movingIndex].plannedDate = targetDay
         tasks[movingIndex].quadrant = targetQuadrant
 
         var orderedIDs = tasks
-            .filter { !$0.isCompleted && calendar.isDate($0.plannedDate, inSameDayAs: targetDay) && $0.quadrant == targetQuadrant && $0.id != id }
+            .filter { !$0.isCompleted && $0.quadrant == targetQuadrant && $0.id != id }
             .sorted(by: taskSort)
             .map(\.id)
 
@@ -325,8 +341,8 @@ final class TaskStore {
             tasks[index].sortOrder = order
         }
 
-        if previousDay != targetDay || previousQuadrant != targetQuadrant {
-            normalizeSortOrders(quadrant: previousQuadrant, on: previousDay)
+        if previousQuadrant != targetQuadrant {
+            normalizeSortOrders(quadrant: previousQuadrant)
         }
         save()
     }
@@ -335,27 +351,22 @@ final class TaskStore {
         carryOverNotice = nil
     }
 
-    private func activeTasks(on date: Date) -> [TaskItem] {
-        tasks.filter { task in
-            !task.isCompleted && calendar.isDate(task.plannedDate, inSameDayAs: date)
-        }
-    }
-
     private func carryOverOverdueTasks() {
         let today = calendar.startOfCurrentDay()
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
-        var nextInboxOrder = nextSortOrder(quadrant: nil, on: today)
+        var nextInboxOrder = nextSortOrder(quadrant: nil)
         var carriedCount = 0
         var includesOlderTasks = false
         var changed = false
 
         for index in tasks.indices {
-            guard !tasks[index].isCompleted, tasks[index].plannedDate < today else { continue }
+            guard !tasks[index].isCompleted, tasks[index].isDateAssigned, tasks[index].plannedDate < today else { continue }
             if tasks[index].plannedDate < yesterday {
                 includesOlderTasks = true
             }
             let days = max(1, calendar.dateComponents([.day], from: tasks[index].plannedDate, to: today).day ?? 1)
             tasks[index].plannedDate = today
+            tasks[index].isDateAssigned = false
             tasks[index].quadrant = nil
             tasks[index].sortOrder = nextInboxOrder
             tasks[index].carryOverCount += days
@@ -365,7 +376,7 @@ final class TaskStore {
         }
 
         if changed {
-            normalizeSortOrders(quadrant: nil, on: today)
+            normalizeSortOrders(quadrant: nil)
             carryOverNotice = CarryOverNotice(
                 count: carriedCount,
                 includesOlderTasks: includesOlderTasks
@@ -381,17 +392,35 @@ final class TaskStore {
         return lhs.createdAt < rhs.createdAt
     }
 
-    private func nextSortOrder(quadrant: TaskQuadrant?, on date: Date) -> Int {
+    private func planningSort(_ lhs: TaskItem, _ rhs: TaskItem) -> Bool {
+        if lhs.isDateAssigned != rhs.isDateAssigned {
+            return !lhs.isDateAssigned
+        }
+
+        let leftRank = lhs.quadrant?.sortRank ?? 4
+        let rightRank = rhs.quadrant?.sortRank ?? 4
+        if leftRank != rightRank {
+            return leftRank < rightRank
+        }
+
+        if lhs.plannedDate != rhs.plannedDate {
+            return lhs.plannedDate < rhs.plannedDate
+        }
+
+        return taskSort(lhs, rhs)
+    }
+
+    private func nextSortOrder(quadrant: TaskQuadrant?) -> Int {
         let currentMax = tasks
-            .filter { !$0.isCompleted && calendar.isDate($0.plannedDate, inSameDayAs: date) && $0.quadrant == quadrant }
+            .filter { !$0.isCompleted && $0.quadrant == quadrant }
             .map(\.sortOrder)
             .max()
         return (currentMax ?? -1) + 1
     }
 
-    private func normalizeSortOrders(quadrant: TaskQuadrant?, on date: Date) {
+    private func normalizeSortOrders(quadrant: TaskQuadrant?) {
         let sortedIDs = tasks
-            .filter { !$0.isCompleted && calendar.isDate($0.plannedDate, inSameDayAs: date) && $0.quadrant == quadrant }
+            .filter { !$0.isCompleted && $0.quadrant == quadrant }
             .sorted(by: taskSort)
             .map(\.id)
 

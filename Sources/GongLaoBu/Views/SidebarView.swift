@@ -13,9 +13,9 @@ struct SidebarView: View {
                 }
             }
 
-            Section("今天") {
+            Section("概览") {
                 SidebarMetricRow(title: "Inbox", value: store.inboxTasks().count, symbolName: "tray")
-                SidebarMetricRow(title: "完成", value: store.ledgerStats().today, symbolName: "checkmark.circle")
+                SidebarMetricRow(title: "今日完成", value: store.ledgerStats().today, symbolName: "checkmark.circle")
             }
         }
         .listStyle(.sidebar)

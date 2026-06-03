@@ -9,7 +9,7 @@ struct QuadrantBoardView: View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    PageHeader(title: "权重", subtitle: Date.now.glbDayTitle)
+                    PageHeader(title: "权重", subtitle: "按象限规划")
 
                     UnassignedTray()
 
@@ -51,7 +51,7 @@ private struct UnassignedTray: View {
     @Environment(TaskStore.self) private var store
 
     private var tasks: [TaskItem] {
-        store.inboxTasks()
+        store.quadrantUnassignedTasks()
     }
 
     var body: some View {

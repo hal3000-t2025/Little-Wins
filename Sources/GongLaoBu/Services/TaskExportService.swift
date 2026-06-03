@@ -69,6 +69,7 @@ enum TaskExportService {
             "title",
             "createdAt",
             "plannedDate",
+            "isDateAssigned",
             "completedAt",
             "isCompleted",
             "quadrant",
@@ -83,6 +84,7 @@ enum TaskExportService {
                 task.title,
                 isoDate(task.createdAt),
                 isoDate(task.plannedDate),
+                task.isDateAssigned ? "true" : "false",
                 task.completedAt.map(isoDate) ?? "",
                 task.isCompleted ? "true" : "false",
                 task.quadrant?.title ?? "",
@@ -99,6 +101,9 @@ enum TaskExportService {
     }
 
     private static func taskExportSort(_ lhs: TaskItem, _ rhs: TaskItem) -> Bool {
+        if lhs.isDateAssigned != rhs.isDateAssigned {
+            return !lhs.isDateAssigned
+        }
         if lhs.plannedDate != rhs.plannedDate {
             return lhs.plannedDate < rhs.plannedDate
         }

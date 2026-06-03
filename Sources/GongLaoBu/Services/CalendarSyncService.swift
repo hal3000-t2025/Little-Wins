@@ -53,7 +53,10 @@ final class CalendarSyncService {
         let marker = marker(for: day)
         let dayTasks = tasks
             .filter { task in
-                dayCalendar.isDate(task.plannedDate, inSameDayAs: day) && task.quadrant == .urgentImportant
+                !task.isCompleted &&
+                    task.isDateAssigned &&
+                    dayCalendar.isDate(task.plannedDate, inSameDayAs: day) &&
+                    task.quadrant == .urgentImportant
             }
             .sorted(by: taskSort)
 
